@@ -1,0 +1,50 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            Int           @id @default(autoincrement())
+  username      String        @unique
+  passwordHash  String
+  createdAt     DateTime      @default(now())
+  formulaGroups FormulaGroup[]
+}
+
+model FormulaGroup {
+  id          Int      @id @default(autoincrement())
+  ownerId     Int
+  name        String
+  createdAt   DateTime @default(now())
+  owner       User     @relation(fields: [ownerId], references: [id])
+  formulas    Formula[]
+}
+
+model Formula {
+  id           Int           @id @default(autoincrement())
+  groupId      Int
+  title        String
+  mathFormula  String
+  description  String?
+  createdAt    DateTime      @default(now())
+  group        FormulaGroup  @relation(fields: [groupId], references: [id])
+  reactions    Reaction[]
+}
+
+model Reaction {
+  id          Int      @id @default(autoincrement())
+  formulaId   Int
+  responseType String
+  createdAt   DateTime @default(now())
+  formula     Formula  @relation(fields: [formulaId], references: [id])
+}
