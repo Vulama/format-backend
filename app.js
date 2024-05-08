@@ -1,31 +1,17 @@
-const express = require('express')
-const app = express()
-const port = 3000
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const express = require('express');
+const app = express();
+const authRoutes = require('./routes/auth');
+const apiRoutes = require('./routes/api');
 
+// Middleware
+app.use(express.json());
 
-app.get('/', (req, res) => {
-//   createDefaultUser()
-  res.send('Hello World!')
-})
+// Routes
+app.use('/auth', authRoutes);
+app.use('/api', apiRoutes);
 
-app.listen(port, () => {
-  console.log(`Example app listening on port ${port}`)
-})
-
-async function createDefaultUser() {
-    try {
-      await prisma.user.create({
-        data: {
-          username: 'user',
-          passwordHash: 'user123',
-        },
-      });
-      console.log('Default user created successfully');
-    } catch (error) {
-      console.error('Error creating default user:', error);
-    } finally {
-      await prisma.$disconnect();
-    }
-  }
+// Start server
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
