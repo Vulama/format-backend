@@ -6,17 +6,19 @@ const { checkGroupOwnership } = require('../middleware/checkOwnership');
 
 const prisma = new PrismaClient();
 
-router.post('/addGroup', async (req, res) => {
-  const { ownerId, name, formulas } = req.body;
+router.post('/publishGroup', authenticateToken, async (req, res) => {
+  const ownerId = req.user.id
+  const { name, formulas } = req.body;
+  const normalisedFormulas = removeNullFieldsFromList(formulas);
+
 
   try {
-    // Create the group
     const newGroup = await prisma.formulaGroup.create({
       data: {
         ownerId: ownerId,
         name: name,
         formulas: {
-          create: formulas,
+          create: normalisedFormulas,
         },
       },
       include: {
@@ -45,11 +47,96 @@ router.get('/groups', async (req, res) => {
   }
 });
 
+router.post('/formula/react', authenticateToken, async (req, res) => {
+  try {
+    const user = req.user
+
+    if(!user){
+      return res.status(403).json({ error: 'This user is not allowed to use this endpoint' });
+    }
+
+    const { formulaId, responseType } = req.body;
+
+    if (!formulaId || !responseType) {
+      return res.status(400).json({ error: 'Formula ID and response type are required' });
+    }
+
+    const existingReaction = await prisma.reaction.findFirst({
+      where: {
+        formulaId: formulaId,
+        formula: {
+          group: {
+            ownerId: user.id
+          }
+        },
+        responseType: responseType
+      }
+    });
+
+    if (existingReaction) {
+      return res.status(400).json({ error: 'User has already reacted with the same type' });
+    }
+
+    const previousReaction = await prisma.reaction.findFirst({
+      where: {
+        formulaId: formulaId,
+        formula: {
+          group: {
+            ownerId: user.id
+          }
+        }
+      }
+    });
+
+    if (previousReaction) {
+      await prisma.reaction.delete({
+        where: {
+          id: previousReaction.id
+        }
+      });
+    }
+
+    const reaction = await prisma.reaction.create({
+      data: {
+        formulaId,
+        responseType
+      }
+    });
+
+    res.status(201).json({ message: 'Reaction added successfully', reaction });
+  } catch (error) {
+    console.error('Error adding reaction to formula:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/reactions', authenticateToken, checkGroupOwnership, async (req, res) => {
+  try {
+    const { groupId } = req.body;
+
+    if (!groupId) {
+      return res.status(400).json({ error: 'Group ID is required' });
+    }
+
+    const reactions = await prisma.reaction.findMany({
+      where: {
+        formula: {
+          groupId: groupId
+        }
+      }
+    });
+
+    res.status(200).json({ reactions });
+  } catch (error) {
+    console.error('Error fetching reactions:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 router.post('/groups/addFormula', authenticateToken, checkGroupOwnership, async (req, res) => {
   const { groupId, title, mathFormula, description } = req.body;
 
-  try {
-    // Create a new formula
+  try {a
     const newFormula = await prisma.formula.create({
       data: {
         groupId: Number(groupId),
@@ -59,12 +146,11 @@ router.post('/groups/addFormula', authenticateToken, checkGroupOwnership, async 
       },
     });
 
-    // Add the newly created formula to the group
     const group = await prisma.formulaGroup.update({
       where: { id: Number(groupId) },
       data: {
         formulas: {
-          connect: { id: newFormula.id }, // Connect the new formula to the group
+          connect: { id: newFormula.id },
         },
       },
       include: {
@@ -79,18 +165,16 @@ router.post('/groups/addFormula', authenticateToken, checkGroupOwnership, async 
   }
 });
 
-router.delete('/groups/deleteFormula', authenticateToken, checkGroupOwnership,async (req, res) => {
+router.delete('/groups/deleteFormula', authenticateToken, checkGroupOwnership, async (req, res) => {
   const { groupId, formulaId } = req.body;
 
   try {
-    // Delete the formula from the database
     await prisma.formula.delete({
       where: {
         id: Number(formulaId),
       },
     });
 
-    // Fetch the updated group without the deleted formula
     const updatedGroup = await prisma.formulaGroup.findUnique({
       where: {
         id: Number(groupId),
@@ -106,5 +190,18 @@ router.delete('/groups/deleteFormula', authenticateToken, checkGroupOwnership,as
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+function removeNullFields(obj) {
+  for (const key in obj) {
+    if (obj[key] === null) {
+      delete obj[key];
+    }
+  }
+  return obj;
+}
+
+function removeNullFieldsFromList(list) {
+  return list.map(obj => removeNullFields(obj));
+}
 
 module.exports = router;
