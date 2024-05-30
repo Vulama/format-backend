@@ -47,11 +47,122 @@ router.get('/groups', async (req, res) => {
   }
 });
 
+router.post('/register', async (req, res) => {
+  const { username, password } = req.body;
+
+  try {
+    const existingUser = await prisma.user.findUnique({
+      where: {
+        username: username,
+      },
+    });
+
+    if (existingUser) {
+      return res.status(400).json({ error: 'Username already exists' });
+    }
+
+    const newUser = await prisma.user.create({
+      data: {
+        username: username,
+        passwordHash: password,
+      },
+    });
+
+    res.status(201).json({ message: 'User registered successfully', user: newUser });
+  } catch (error) {
+    console.error('Error registering user:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.get('/loadUserData', authenticateToken, async (req, res) => {
+  const user = req.user
+
+  try {
+    const downloadedFormulaGroups = await prisma.downloadedFormulaGroup.findMany({
+      where: {
+        userId: user.id,
+      },
+      include: {
+        formulaGroup: {
+          include: {
+            formulas: true,
+          },
+        },
+      },
+    });
+
+    const userReactions = await prisma.reaction.findMany({
+      where: {
+        userId: user.id,
+      },
+      include: {
+        formula: true,
+      },
+    });
+
+    res.json({
+      user: user,
+      downloadedFormulaGroups: downloadedFormulaGroups,
+      userReactions: userReactions,
+    });
+  } catch (error) {
+    console.error('Error during loading user data:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/user/groupDownload', authenticateToken, async (req, res) => {
+  const userId = req.user.id
+  const { formulaGroupId } = req.body;
+
+  if(!userId){
+    return res.status(403).json({ error: 'This user is not allowed to use this endpoint' });
+  }
+
+  try {
+    const newDownload = await prisma.downloadedFormulaGroup.create({
+      data: {
+        userId,
+        formulaGroupId
+      }
+    });
+    res.status(201).json(newDownload);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'An error occurred while adding the downloaded formula group.' });
+  }
+});
+
+router.post('/user/groupDelete', authenticateToken, async (req, res) => {
+  const userId = req.user.id;
+  const { formulaGroupId } = req.body;
+
+  if (!userId) {
+    return res.status(403).json({ error: 'This user is not allowed to use this endpoint' });
+  }
+
+  try {
+    const deletedDownload = await prisma.downloadedFormulaGroup.delete({
+      where: {
+        userId_formulaGroupId: {
+          userId,
+          formulaGroupId
+        }
+      }
+    });
+    res.status(200).json(deletedDownload);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'An error occurred while deleting the downloaded formula group.' });
+  }
+});
+
 router.post('/formula/react', authenticateToken, async (req, res) => {
   try {
-    const user = req.user
+    const user = req.user;
 
-    if(!user){
+    if (!user) {
       return res.status(403).json({ error: 'This user is not allowed to use this endpoint' });
     }
 
@@ -64,46 +175,32 @@ router.post('/formula/react', authenticateToken, async (req, res) => {
     const existingReaction = await prisma.reaction.findFirst({
       where: {
         formulaId: formulaId,
-        formula: {
-          group: {
-            ownerId: user.id
-          }
-        },
-        responseType: responseType
+        userId: user.id
       }
     });
 
     if (existingReaction) {
-      return res.status(400).json({ error: 'User has already reacted with the same type' });
-    }
-
-    const previousReaction = await prisma.reaction.findFirst({
-      where: {
-        formulaId: formulaId,
-        formula: {
-          group: {
-            ownerId: user.id
-          }
-        }
-      }
-    });
-
-    if (previousReaction) {
-      await prisma.reaction.delete({
+      const updatedReaction = await prisma.reaction.update({
         where: {
-          id: previousReaction.id
+          id: existingReaction.id
+        },
+        data: {
+          responseType: responseType
         }
       });
+
+      return res.status(200).json({ message: 'Reaction updated successfully', reaction: updatedReaction });
     }
 
-    const reaction = await prisma.reaction.create({
+    const newReaction = await prisma.reaction.create({
       data: {
-        formulaId,
-        responseType
+        formulaId: formulaId,
+        responseType: responseType,
+        userId: user.id
       }
     });
 
-    res.status(201).json({ message: 'Reaction added successfully', reaction });
+    res.status(201).json({ message: 'Reaction added successfully', reaction: newReaction });
   } catch (error) {
     console.error('Error adding reaction to formula:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -129,64 +226,6 @@ router.post('/reactions', authenticateToken, checkGroupOwnership, async (req, re
     res.status(200).json({ reactions });
   } catch (error) {
     console.error('Error fetching reactions:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-router.post('/groups/addFormula', authenticateToken, checkGroupOwnership, async (req, res) => {
-  const { groupId, title, mathFormula, description } = req.body;
-
-  try {a
-    const newFormula = await prisma.formula.create({
-      data: {
-        groupId: Number(groupId),
-        title,
-        mathFormula,
-        description,
-      },
-    });
-
-    const group = await prisma.formulaGroup.update({
-      where: { id: Number(groupId) },
-      data: {
-        formulas: {
-          connect: { id: newFormula.id },
-        },
-      },
-      include: {
-        formulas: true,
-      },
-    });
-
-    res.status(200).json(group);
-  } catch (error) {
-    console.error('Error adding formula to group:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-router.delete('/groups/deleteFormula', authenticateToken, checkGroupOwnership, async (req, res) => {
-  const { groupId, formulaId } = req.body;
-
-  try {
-    await prisma.formula.delete({
-      where: {
-        id: Number(formulaId),
-      },
-    });
-
-    const updatedGroup = await prisma.formulaGroup.findUnique({
-      where: {
-        id: Number(groupId),
-      },
-      include: {
-        formulas: true,
-      },
-    });
-
-    res.status(200).json(updatedGroup);
-  } catch (error) {
-    console.error('Error deleting formula from group:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

@@ -14,37 +14,53 @@ datasource db {
 }
 
 model User {
-  id            Int           @id @default(autoincrement())
-  username      String        @unique
+  id            Int                   @id @default(autoincrement())
+  username      String                @unique
   passwordHash  String
-  createdAt     DateTime      @default(now())
+  createdAt     DateTime              @default(now())
   formulaGroups FormulaGroup[]
+  reactions     Reaction[]
+  downloadedFormulaGroups DownloadedFormulaGroup[]
 }
 
 model FormulaGroup {
-  id          Int      @id @default(autoincrement())
+  id          Int                   @id @default(autoincrement())
   ownerId     Int
   name        String
-  createdAt   DateTime @default(now())
-  owner       User     @relation(fields: [ownerId], references: [id])
+  createdAt   DateTime              @default(now())
+  owner       User                  @relation(fields: [ownerId], references: [id])
   formulas    Formula[]
+  downloadedByUsers DownloadedFormulaGroup[]
 }
 
 model Formula {
-  id           Int           @id @default(autoincrement())
+  id           Int                   @id @default(autoincrement())
   groupId      Int
   title        String
   mathFormula  String
   description  String?
-  createdAt    DateTime      @default(now())
-  group        FormulaGroup  @relation(fields: [groupId], references: [id])
+  createdAt    DateTime              @default(now())
+  group        FormulaGroup          @relation(fields: [groupId], references: [id])
   reactions    Reaction[]
 }
 
 model Reaction {
-  id          Int      @id @default(autoincrement())
+  id          Int                   @id @default(autoincrement())
   formulaId   Int
   responseType String
-  createdAt   DateTime @default(now())
-  formula     Formula  @relation(fields: [formulaId], references: [id])
+  createdAt   DateTime              @default(now())
+  formula     Formula               @relation(fields: [formulaId], references: [id])
+  user        User?                 @relation(fields: [userId], references: [id])
+  userId      Int?
+}
+
+model DownloadedFormulaGroup {
+  userId      Int
+  formulaGroupId Int
+  downloadedAt DateTime             @default(now())
+
+  user        User                  @relation(fields: [userId], references: [id])
+  formulaGroup FormulaGroup         @relation(fields: [formulaGroupId], references: [id])
+
+  @@id([userId, formulaGroupId])
 }
