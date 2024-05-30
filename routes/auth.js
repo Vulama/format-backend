@@ -46,15 +46,40 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid username or password' });
     }
 
-    const accessTokenExpiration = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes from now
+    const downloadedFormulaGroups = await prisma.downloadedFormulaGroup.findMany({
+      where: {
+        userId: user.id,
+      },
+      include: {
+        formulaGroup: {
+          include: {
+            formulas: true,
+          },
+        },
+      },
+    });
+
+    const userReactions = await prisma.reaction.findMany({
+      where: {
+        userId: user.id,
+      },
+      include: {
+        formula: true,
+      },
+    });
+
+    const accessTokenExpiration = new Date(Date.now() + 120 * 60 * 1000); // 120 minutes from now
     const refreshTokenExpiration = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days from now
-    const accessToken = jwt.sign({ id: user.id }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '30m' });
+    const accessToken = jwt.sign({ id: user.id }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '120m' });
     const refreshToken = jwt.sign({ id: user.id }, process.env.REFRESH_TOKEN_SECRET, { expiresIn: '30d' });
     res.json({
       accessToken: accessToken,
       accessTokenExpiresAt: accessTokenExpiration,
       refreshToken: refreshToken,
-      refreshTokenExpiresAt: refreshTokenExpiration
+      refreshTokenExpiresAt: refreshTokenExpiration,
+      user: user,
+      downloadedFormulaGroups: downloadedFormulaGroups,
+      userReactions: userReactions,
     });
   } catch (error) {
     console.error('Error during login:', error);
@@ -73,8 +98,8 @@ router.post('/refreshToken', (req, res) => {
       return res.sendStatus(403);
     }
 
-    const accessTokenExpiration = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes from now
-    const accessToken = jwt.sign({ userId: user.userId }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '30m' });
+    const accessTokenExpiration = new Date(Date.now() + 120 * 60 * 1000); // 120 minutes from now
+    const accessToken = jwt.sign({ id: user.id }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '120m' });
     res.json({
       accessToken: accessToken,
       accessTokenExpiresAt: accessTokenExpiration,
